@@ -1,11 +1,12 @@
 # Vision Blur
 
-**Vision Blur** is a module for Foundry VTT that limits player vision with a custom blur effect.
+**Vision Blur** is a module for Foundry Virtual Tabletop, meant to help obscure token vision past a set range.
 
 ## Features
 
-- Applies a Gaussian blur to the vision of tokens.
-- Configurable blur strength (future feature).
+- This module offers a friendly option for gamemasters and players who are interested in limiting the amount of information available on the map, with limited customizability.
+- Configurable blur strength.
+- Toggleable GM Setting
 
 ## Installation
 
@@ -13,12 +14,14 @@
 You can install this module from the Foundry VTT module browser by searching for "Vision Blur".
 
 ### Manual
-1. Copy the "Manifest URL": `https://github.com/<YOUR-USERNAME>/<YOUR-REPO>/releases/latest/download/module.json`
+1. Copy the "Manifest URL": `https://github.com/RudeCanine/Vision-blur/releases/latest/download/module.json`
 2. Paste it into the "Manifest URL" field in the Foundry VTT module setup screen.
 
-## Usage
+**Made with Antigravity.**
 
-Enable the module in your world. The blur effect will be applied to token vision automatically.
+![vision blur on](https://github.com/user-attachments/assets/f543c00f-3e21-4900-b438-1c6372442c84)
+
+![vision blur off](https://github.com/user-attachments/assets/661f5f99-1948-44d7-bffa-e6d2844957ad)
 
 ## License
 
