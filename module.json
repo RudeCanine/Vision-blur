@@ -1,0 +1,34 @@
+{
+  "id": "vision-blur",
+  "title": "Vision Blur",
+  "description": "Limits player vision with a custom blur effect.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "authors": [
+    {
+      "name": "RudeCanine",
+      "url": "",
+      "discord": "RudeCanine"
+    }
+  ],
+  "esmodules": [
+    "scripts/main.js",
+    "scripts/filter.js"
+  ],
+  "styles": [
+    "styles/module.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "languages/en.json"
+    }
+  ],
+  "url": "",
+  "manifest": "",
+  "download": ""
+}
