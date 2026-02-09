@@ -9,4 +9,7 @@ This module offers a friendly option for gamemasters and players who are interes
 **Made with Antigravity.**
 
 
-<img width="3436" height="1262" alt="image" src="https://github.com/user-attachments/assets/7048b291-75f9-446e-8e4b-b3b09d6aa5ad" />
+
+![vision blur on](https://github.com/user-attachments/assets/f543c00f-3e21-4900-b438-1c6372442c84)
+
+![vision blur off](https://github.com/user-attachments/assets/661f5f99-1948-44d7-bffa-e6d2844957ad)
