@@ -35,6 +35,15 @@ Hooks.on("init", function () {
     type: Boolean,
     default: false
   });
+
+  game.settings.register(MODULE_ID, "dimBlurOnly", {
+    name: "Enable Only in Dim Light",
+    hint: "If enabled, the blur effect will only activate when the token is in dim light or darkness.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false
+  });
 });
 
 Hooks.on("canvasReady", async function () {
@@ -58,6 +67,7 @@ function updateFilter() {
 
   const isGM = game.user.isGM;
   const gmEnabled = game.settings.get(MODULE_ID, "gmBlurEnabled");
+  const dimOnly = game.settings.get(MODULE_ID, "dimBlurOnly");
 
   // GM Logic
   if (isGM) {
@@ -96,6 +106,76 @@ function updateFilter() {
   if (!token) {
     if (visionFilter.enabled) visionFilter.enabled = false;
     return;
+  }
+
+  // Check Lighting Conditions if 'dimOnly' is enabled
+  if (dimOnly) {
+    let inBrightLight = false;
+
+    // 1. Check Point Sources (Lights)
+    // V13 Compatibility: canvas.effects.illumination.sources might be a Map or Collection.
+    const lightSources = canvas.effects.illumination.sources;
+
+    // Helper to get iterator safely
+    const getSources = (sources) => {
+      if (sources instanceof Map) return sources.values();
+      if (sources instanceof Set) return sources.values();
+      if (Array.isArray(sources)) return sources;
+      // In some Foundry versions it might be a Collection which is a Map
+      if (sources.contents) return sources.contents;
+      return [];
+    };
+
+    const sourcesIterator = getSources(lightSources);
+
+    for (const source of sourcesIterator) {
+      if (!source.active) continue;
+
+      // Compatibility Check: V13 might change data structure
+      const data = source.document ? source.document : source.data;
+
+      if (data.bright > 0 && source.shape.contains(token.center.x, token.center.y)) {
+        inBrightLight = true;
+        break;
+      }
+    }
+
+    // 2. Check Global Illumination (Daylight)
+    // If not already in a bright source, check if the global environment is bright.
+    if (!inBrightLight) {
+      // canvas.environment.globalLight is true if GI is active (e.g. Daytime)
+      // However, we must also check if we are inside a "Darkness Source" which suppresses GI.
+
+      if (canvas.environment.globalLight) {
+        // Check if inside a darkness source (which suppresses global light)
+        let inDarknessSource = false;
+
+        // Re-use iterator safely
+        const darknessSourcesIterator = getSources(lightSources); // Re-use the helper
+
+        for (const source of darknessSourcesIterator) {
+          if (!source.active) continue;
+          const data = source.document ? source.document : source.data;
+
+          // If light source is "Darkness" (luminosity < 0)
+          if (data.luminosity < 0 && source.shape.contains(token.center.x, token.center.y)) {
+            inDarknessSource = true;
+            break;
+          }
+        }
+
+        if (!inDarknessSource) {
+          inBrightLight = true;
+        }
+      }
+    }
+
+    // If we are in bright light, DISABLE blur.
+    // Meaning: Blur is ENABLED only in Dim Light or Darkness.
+    if (inBrightLight) {
+      if (visionFilter.enabled) visionFilter.enabled = false;
+      return;
+    }
   }
 
   visionFilter.enabled = true;
