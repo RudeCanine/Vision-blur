@@ -6,7 +6,8 @@
 
 - This module offers a friendly option for gamemasters and players who are interested in limiting the amount of information available on the map, with limited customizability.
 - Configurable blur strength.
-- Toggleable GM Setting
+- Toggleable GM Setting.
+- Now with "limit-to-darkvision" functionality
 
 ## Installation
 
