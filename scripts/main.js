@@ -15,7 +15,7 @@ Hooks.on("init", function () {
     scope: "world",
     config: true,
     type: Number,
-    default: 25
+    default: 10
   });
 
   game.settings.register(MODULE_ID, "blurStrength", {
@@ -36,9 +36,9 @@ Hooks.on("init", function () {
     default: false
   });
 
-  game.settings.register(MODULE_ID, "dimBlurOnly", {
-    name: "Enable Only in Dim Light",
-    hint: "If enabled, the blur effect will only activate when the token is in dim light or darkness.",
+  game.settings.register(MODULE_ID, "darkvisionBlurOnly", {
+    name: "Enable Only with Darkvision",
+    hint: "If enabled, the blur effect will only activate when the token is using Darkvision (e.g. in darkness).",
     scope: "world",
     config: true,
     type: Boolean,
@@ -62,143 +62,265 @@ Hooks.on("canvasReady", async function () {
   canvas.app.ticker.add(updateFilter);
 });
 
+// State variables for transition
+let currentBlurFactor = 0; // 0 to 1
+let targetBlurFactor = 0;  // 0 or 1
+let frameCounter = 0;
+const LOGIC_THROTTLE = 10; // Check logic every 10 frames (~6 times/sec @ 60fps)
+const BLUR_SPEED = 0.05;   // Transition speed (lower is slower)
+
+// Store the calculated token data for the shader
+let activeTokensData = [];
+
 function updateFilter() {
   if (!visionFilter || !canvas.ready) return;
 
-  const isGM = game.user.isGM;
-  const gmEnabled = game.settings.get(MODULE_ID, "gmBlurEnabled");
-  const dimOnly = game.settings.get(MODULE_ID, "dimBlurOnly");
-
-  // GM Logic
-  if (isGM) {
-    if (!gmEnabled) {
-      if (visionFilter.enabled) visionFilter.enabled = false;
-      return;
-    }
-
-    // If enabled for GM: Only apply if a token is CONTROLLED.
-    // If no token is controlled, disable filter (Full Vision).
-    if (canvas.tokens.controlled.length === 0) {
-      if (visionFilter.enabled) visionFilter.enabled = false;
-      return;
-    }
+  // 1. Logic Check (Throttled)
+  // We need to run this periodically to update which tokens are relevant and their states
+  frameCounter++;
+  if (frameCounter >= LOGIC_THROTTLE) {
+    frameCounter = 0;
+    updateTokenLogic();
   }
 
-  // 1. Controlled Token (Priority for both GM and Player)
-  let token = canvas.tokens.controlled[0];
-
-  // 2. Persistence Logic (PLAYER ONLY)
-  // If not GM, and no token controlled, fall back to character/owned
-  if (!isGM && !token) {
-    // A. Assigned Character Token
-    if (game.user.character) {
-      const charTokens = game.user.character.getActiveTokens();
-      if (charTokens.length) token = charTokens[0];
-    }
-
-    // B. First Owned Token (Fallback)
-    if (!token) {
-      token = canvas.tokens.placeables.find(t => t.isOwner);
-    }
+  // 2. Transition Logic (Every Frame)
+  if (Math.abs(currentBlurFactor - targetBlurFactor) > 0.001) {
+    currentBlurFactor += (targetBlurFactor - currentBlurFactor) * BLUR_SPEED;
+  } else {
+    currentBlurFactor = targetBlurFactor;
   }
 
-  // If still no token (e.g. player has no tokens), disable filter
-  if (!token) {
+  // Optimize: Disable filter if effectively off
+  if (currentBlurFactor < 0.01 && targetBlurFactor === 0) {
     if (visionFilter.enabled) visionFilter.enabled = false;
     return;
   }
 
-  // Check Lighting Conditions if 'dimOnly' is enabled
-  if (dimOnly) {
-    let inBrightLight = false;
+  // Enable filter if it should be visible
+  if (!visionFilter.enabled && currentBlurFactor > 0.01) {
+    visionFilter.enabled = true;
+  }
 
-    // 1. Check Point Sources (Lights)
-    // V13 Compatibility: canvas.effects.illumination.sources might be a Map or Collection.
-    const lightSources = canvas.effects.illumination.sources;
+  // If filter is disabled, skip uniform updates
+  if (!visionFilter.enabled) return;
 
-    // Helper to get iterator safely
-    const getSources = (sources) => {
-      if (sources instanceof Map) return sources.values();
-      if (sources instanceof Set) return sources.values();
-      if (Array.isArray(sources)) return sources;
-      // In some Foundry versions it might be a Collection which is a Map
-      if (sources.contents) return sources.contents;
-      return [];
-    };
+  // 3. Update Uniforms
+  // We need to re-calculate screen positions every frame because the camera or tokens might move
+  const tokensForShader = [];
+  const renderer = canvas.app.renderer;
+  const rangeUnits = game.settings.get(MODULE_ID, "visionRange");
+  const rangeWorldPixels = rangeUnits * canvas.dimensions.size;
+  const scale = canvas.stage.scale.x;
+  // Normalize range by the MIN dimension, matching the shader's aspect logic
+  const baseRangeUV = (rangeWorldPixels * scale) / Math.min(renderer.width, renderer.height);
 
-    const sourcesIterator = getSources(lightSources);
+  for (const tData of activeTokensData) {
+    const token = tData.token;
+    if (!token || !token.visible) continue;
 
-    for (const source of sourcesIterator) {
-      if (!source.active) continue;
+    // Calculate Screen Position
+    const screenPos = canvas.stage.transform.worldTransform.apply(token.center);
+    const normX = screenPos.x / renderer.width;
+    const normY = screenPos.y / renderer.height;
 
-      // Compatibility Check: V13 might change data structure
-      const data = source.document ? source.document : source.data;
-
-      if (data.bright > 0 && source.shape.contains(token.center.x, token.center.y)) {
-        inBrightLight = true;
-        break;
-      }
+    // If token has "Infinite Vision" (e.g. in Light), we pass a huge range
+    // effectively clearing the screen for this token's contribution.
+    // Otherwise, use the standard configured range.
+    let effectiveRange = baseRangeUV;
+    if (tData.hasClearVision) {
+      effectiveRange = 10.0; // Huge value (10x screen size) to clear everything
     }
 
-    // 2. Check Global Illumination (Daylight)
-    // If not already in a bright source, check if the global environment is bright.
-    if (!inBrightLight) {
-      // canvas.environment.globalLight is true if GI is active (e.g. Daytime)
-      // However, we must also check if we are inside a "Darkness Source" which suppresses GI.
+    tokensForShader.push({
+      pos: [normX, normY],
+      range: effectiveRange
+    });
+  }
 
-      if (canvas.environment.globalLight) {
-        // Check if inside a darkness source (which suppresses global light)
-        let inDarknessSource = false;
+  const maxStrength = game.settings.get(MODULE_ID, "blurStrength");
 
-        // Re-use iterator safely
-        const darknessSourcesIterator = getSources(lightSources); // Re-use the helper
+  visionFilter.update({
+    tokens: tokensForShader,
+    blur: maxStrength * currentBlurFactor
+  });
+}
 
-        for (const source of darknessSourcesIterator) {
+function updateTokenLogic() {
+  const { isGM } = game.user;
+  const gmEnabled = game.settings.get(MODULE_ID, "gmBlurEnabled");
+  const darkvisionOnly = game.settings.get(MODULE_ID, "darkvisionBlurOnly");
+
+  activeTokensData = []; // Reset list
+
+  // GM Logic: If disabled for GM, we just stop here (targetBlurFactor = 0)
+  if (isGM && !gmEnabled) {
+    targetBlurFactor = 0;
+    return;
+  }
+
+  // Gather Candidate Tokens
+  let candidates = [];
+
+  // A. Controlled Tokens (Primary)
+  if (canvas.tokens.controlled.length > 0) {
+    candidates = [...canvas.tokens.controlled];
+  }
+  // B. Fallback to Owned Tokens (Player only)
+  else if (!isGM) {
+    if (game.user.character) {
+      // Active tokens for the assigned character
+      const charTokens = game.user.character.getActiveTokens();
+      if (charTokens.length) candidates = [...charTokens];
+    }
+
+    // If still none, try any owned token
+    if (candidates.length === 0) {
+      // This can be expensive if map is huge, but usually active tokens are few
+      candidates = canvas.tokens.placeables.filter(t => t.isOwner);
+    }
+  }
+
+  // If no candidates, disable blur
+  if (candidates.length === 0) {
+    targetBlurFactor = 0;
+    return;
+  }
+
+  // Process Each Candidate
+  let atLeastOneNeedsBlur = false;
+
+  // Helper for Light Checks
+  const getSources = (sources) => {
+    if (!sources) return [];
+    if (sources instanceof Map || sources instanceof Set) return sources.values();
+    if (Array.isArray(sources)) return sources;
+    if (sources.contents) return sources.contents;
+    return [];
+  };
+
+  const lightSourcesFn = canvas.effects.lightSources || canvas.effects.illumination?.sources;
+  const darknessSourcesFn = canvas.effects.darknessSources || canvas.effects.illumination?.sources;
+
+  // Check Global Illumination
+  let globalLight = false;
+  if (canvas.scene?.environment?.globalLight) {
+    if (typeof canvas.scene.environment.globalLight.enabled !== 'undefined') {
+      globalLight = canvas.scene.environment.globalLight.enabled;
+    } else {
+      globalLight = !!canvas.scene.environment.globalLight;
+    }
+  } else if (typeof canvas.environment?.globalLight !== 'undefined') {
+    globalLight = canvas.environment.globalLight;
+  }
+
+  for (const token of candidates) {
+    // Logic per token
+    // Default assumption: The token is subject to blur (limited vision)
+    // unless "Darkvision Only" logic says otherwise.
+
+    let hasClearVision = false; // "Clear Vision" means effectively no blur limit
+
+    if (darkvisionOnly) {
+      const activeModeId = token.document.sight.visionMode || token.vision?.mode?.id;
+
+      // 1. Not Darkvision? -> Clear Vision
+      if (activeModeId !== "darkvision") {
+        hasClearVision = true;
+      }
+      // 2. Darkvision but In Light? -> Clear Vision
+      else {
+        let inLight = false;
+
+        // Point Sources
+        for (const source of getSources(lightSourcesFn)) {
           if (!source.active) continue;
           const data = source.document ? source.document : source.data;
-
-          // If light source is "Darkness" (luminosity < 0)
-          if (data.luminosity < 0 && source.shape.contains(token.center.x, token.center.y)) {
-            inDarknessSource = true;
+          if ((data.dim > 0 || data.bright > 0) && source.shape.contains(token.center.x, token.center.y)) {
+            inLight = true;
             break;
           }
         }
 
-        if (!inDarknessSource) {
-          inBrightLight = true;
+        // Global Light (if not suppressed)
+        if (!inLight && globalLight) {
+          let inDarknessSource = false;
+          for (const source of getSources(darknessSourcesFn)) {
+            if (!source.active) continue;
+            const data = source.document ? source.document : source.data;
+            if (data.luminosity < 0 && source.shape.contains(token.center.x, token.center.y)) {
+              inDarknessSource = true;
+              break;
+            }
+          }
+          if (!inDarknessSource) inLight = true;
+        }
+
+        if (inLight) {
+          hasClearVision = true;
         }
       }
     }
 
-    // If we are in bright light, DISABLE blur.
-    // Meaning: Blur is ENABLED only in Dim Light or Darkness.
-    if (inBrightLight) {
-      if (visionFilter.enabled) visionFilter.enabled = false;
-      return;
+    // If "Darkvision Only" is OFF, then ALL tokens are subject to blur (hasClearVision = false).
+    // If ON, only those failing the check are subject to blur.
+
+    activeTokensData.push({ token, hasClearVision });
+
+    // If at least one token is in a state that requires blur (i.e. NOT clear vision),
+    // we generally want the blur effect active (masking the unknown).
+    // Wait, if I have Token A (Dark, needs blur) and Token B (Light, clear),
+    // The filter SHOULD be active, but Token B will punch a huge hole in it.
+    // So yes, we need the filter ON.
+    // The filter is only OFF if *everyone* has clear vision? 
+    // Actually, if everyone has clear vision (radius 10.0), the filter effectively does nothing,
+    // so we can disable it for performance.
+    if (!hasClearVision) {
+      atLeastOneNeedsBlur = true;
     }
   }
 
-  visionFilter.enabled = true;
+  // However, if "Darkvision Only" is NOT enabled, then `hasClearVision` is always false.
+  // In that case, we definitely need blur.
+  // If "Darkvision Only" IS enabled:
+  // - A (Dark): hasClearVision = false.
+  // - B (Light): hasClearVision = true.
+  // We want filter ON. A contributes small hole, B contributes huge hole.
+  // If all are Light -> All true -> Filter effectively invisible -> Can be OFF.
 
-  // Calculate Token Screen Position (Normalized 0-1)
-  const screenPos = canvas.stage.transform.worldTransform.apply(token.center);
-  const normalizedPos = [
-    screenPos.x / canvas.app.renderer.width,
-    screenPos.y / canvas.app.renderer.height
-  ];
+  // So, if we have active tokens, we generally want the filter ON, 
+  // unless we can prove it's useless.
+  // For simplicity, let's keep it ON if there are candidates, 
+  // and let the optimization in updateFilter (currentBlurFactor) handle fading out 
+  // if we set target to 0?
+  // No, we need to decide targetBlurFactor here.
 
-  // Calculate Range in "Screen/UV Space"
-  const rangeUnits = game.settings.get(MODULE_ID, "visionRange");
-  const rangeWorldPixels = rangeUnits * canvas.dimensions.size;
+  // Logic: "Hinder Metagaming"
+  // If "Enable Only with Darkvision" is ON:
+  // If ANY token is in the Dark (needs blur), we must enforce the blur for everyone.
+  // We only disable the blur if ALL tokens are in the Light (clear vision).
 
-  const scale = canvas.stage.scale.x;
-  const rangeScreenPixels = rangeWorldPixels * scale;
+  if (darkvisionOnly) {
+    const anyInDark = activeTokensData.some(t => !t.hasClearVision);
 
-  const rangeUV = rangeScreenPixels / canvas.app.renderer.width;
-
-  visionFilter.update({
-    pos: normalizedPos,
-    range: rangeUV,
-    blur: game.settings.get(MODULE_ID, "blurStrength")
-  });
+    if (anyInDark) {
+      // Rule: If ANY in dark, we enforce blur on ALL.
+      // This prevents the "Light" token from clearing the screen.
+      for (const tData of activeTokensData) {
+        tData.hasClearVision = false;
+      }
+      targetBlurFactor = 1;
+    } else {
+      // ALL are in light (or don't have Darkvision mode)
+      // To ensure a smooth fade OUT, we must NOT snap the range to infinite.
+      // We keep 'hasClearVision = false' (Normal Range) and let 
+      // the opacity (uBlurStrength) fade to 0.
+      for (const tData of activeTokensData) {
+        tData.hasClearVision = false;
+      }
+      targetBlurFactor = 0;
+    }
+  } else {
+    // Normal Mode: Always blur
+    targetBlurFactor = 1;
+  }
 }
