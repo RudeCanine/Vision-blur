@@ -5,6 +5,79 @@ let visionFilter;
 
 console.log(`${MODULE_ID} | Initializing module`);
 
+Hooks.on("renderSceneConfig", (app, html, data) => {
+  const scene = app.document ?? app.object;
+  if (!scene) return;
+  
+  const enableOverride = scene.getFlag(MODULE_ID, "enableOverride") ?? false;
+  const disableBlur = scene.getFlag(MODULE_ID, "disableBlur") ?? false;
+  
+  const visionRange = scene.getFlag(MODULE_ID, "visionRange") ?? game.settings.get(MODULE_ID, "visionRange");
+  const blurStrength = scene.getFlag(MODULE_ID, "blurStrength") ?? game.settings.get(MODULE_ID, "blurStrength");
+  
+  const darkvisionBlurOnly = scene.getFlag(MODULE_ID, "darkvisionBlurOnly") ?? game.settings.get(MODULE_ID, "darkvisionBlurOnly");
+
+  const markup = `
+    <div class="form-group">
+      <label>${game.i18n.localize("VISION-BLUR.SceneOverrideName")}</label>
+      <div class="form-fields">
+        <input type="checkbox" name="flags.${MODULE_ID}.enableOverride" ${enableOverride ? "checked" : ""}>
+      </div>
+      <p class="notes hint">${game.i18n.localize("VISION-BLUR.SceneOverrideHint")}</p>
+    </div>
+    <div class="form-group">
+      <label>${game.i18n.localize("VISION-BLUR.SceneDisableName")}</label>
+      <div class="form-fields">
+        <input type="checkbox" name="flags.${MODULE_ID}.disableBlur" ${disableBlur ? "checked" : ""}>
+      </div>
+      <p class="notes hint">${game.i18n.localize("VISION-BLUR.SceneDisableHint")}</p>
+    </div>
+    <div class="form-group">
+      <label>${game.i18n.localize("VISION-BLUR.SceneVisionRangeName")}</label>
+      <div class="form-fields">
+        <input type="number" name="flags.${MODULE_ID}.visionRange" value="${visionRange}">
+      </div>
+      <p class="notes hint">${game.i18n.localize("VISION-BLUR.SceneVisionRangeHint")}</p>
+    </div>
+    <div class="form-group">
+      <label>${game.i18n.localize("VISION-BLUR.SceneBlurStrengthName")}</label>
+      <div class="form-fields">
+        <input type="number" name="flags.${MODULE_ID}.blurStrength" value="${blurStrength}">
+      </div>
+      <p class="notes hint">${game.i18n.localize("VISION-BLUR.SceneBlurStrengthHint")}</p>
+    </div>
+    <div class="form-group">
+      <label>${game.i18n.localize("VISION-BLUR.SceneDarkvisionOnlyName")}</label>
+      <div class="form-fields">
+        <input type="checkbox" name="flags.${MODULE_ID}.darkvisionBlurOnly" ${darkvisionBlurOnly ? "checked" : ""}>
+      </div>
+      <p class="notes hint">${game.i18n.localize("VISION-BLUR.SceneDarkvisionOnlyHint")}</p>
+    </div>
+  `;
+
+  const rootElement = (app.element instanceof jQuery) ? app.element[0] : (app.element || html[0] || html);
+  const div = document.createElement("div");
+  div.innerHTML = `<fieldset><legend>${game.i18n.localize("VISION-BLUR.SceneConfigHeader")}</legend>${markup}</fieldset>`;
+  const fieldset = div.firstElementChild;
+
+  const tab = rootElement.querySelector('div[data-tab="lighting"], section[data-tab="lighting"], div[data-tab="ambience"], section[data-tab="ambience"]');
+  
+  if (tab) {
+    tab.appendChild(fieldset);
+  } else {
+    const footer = rootElement.querySelector('footer');
+    if (footer) {
+      footer.parentNode.insertBefore(fieldset, footer);
+    } else {
+      (html[0] || html).appendChild(fieldset);
+    }
+  }
+  
+  if (typeof app.setPosition === "function") {
+    app.setPosition({ height: "auto" });
+  }
+});
+
 Hooks.on("init", function () {
   console.log(`${MODULE_ID} | Hook: init`);
 
@@ -104,11 +177,18 @@ function updateFilter() {
   // If filter is disabled, skip uniform updates
   if (!visionFilter.enabled) return;
 
+  // Read Scene Config
+  const scene = canvas.scene;
+  const enableOverride = scene?.getFlag(MODULE_ID, "enableOverride") ?? false;
+  
+  const rangeUnits = (enableOverride && scene?.getFlag(MODULE_ID, "visionRange") !== undefined)
+      ? scene.getFlag(MODULE_ID, "visionRange")
+      : game.settings.get(MODULE_ID, "visionRange");
+
   // 3. Update Uniforms
   // We need to re-calculate screen positions every frame because the camera or tokens might move
   const tokensForShader = [];
   const renderer = canvas.app.renderer;
-  const rangeUnits = game.settings.get(MODULE_ID, "visionRange");
   const rangeWorldPixels = rangeUnits * canvas.dimensions.size;
   const scale = canvas.stage.scale.x;
   // Normalize range by the MIN dimension, matching the shader's aspect logic
@@ -137,7 +217,9 @@ function updateFilter() {
     });
   }
 
-  const maxStrength = game.settings.get(MODULE_ID, "blurStrength");
+  const maxStrength = (enableOverride && scene?.getFlag(MODULE_ID, "blurStrength") !== undefined)
+      ? scene.getFlag(MODULE_ID, "blurStrength")
+      : game.settings.get(MODULE_ID, "blurStrength");
 
   visionFilter.update({
     tokens: tokensForShader,
@@ -146,9 +228,22 @@ function updateFilter() {
 }
 
 function updateTokenLogic() {
+  const scene = canvas.scene;
+  const enableOverride = scene?.getFlag(MODULE_ID, "enableOverride") ?? false;
+  const disableBlur = scene?.getFlag(MODULE_ID, "disableBlur") ?? false;
+
+  // SCENE OVERRIDE: Disable Blur Completely
+  if (enableOverride && disableBlur) {
+    targetBlurFactor = 0;
+    activeTokensData = [];
+    return;
+  }
+
   const { isGM } = game.user;
   const gmEnabled = game.settings.get(MODULE_ID, "gmBlurEnabled");
-  const darkvisionOnly = game.settings.get(MODULE_ID, "darkvisionBlurOnly");
+  const darkvisionOnly = (enableOverride && scene?.getFlag(MODULE_ID, "darkvisionBlurOnly") !== undefined)
+      ? scene.getFlag(MODULE_ID, "darkvisionBlurOnly")
+      : game.settings.get(MODULE_ID, "darkvisionBlurOnly");
 
   activeTokensData = []; // Reset list
 
