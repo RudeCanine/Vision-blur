@@ -8,7 +8,7 @@
 - Configurable and global blur strength and range.
 - Toggleable GM Setting.
 - **Scene-specific configurations** allowing gamemasters to override range and strength, or completely disable the blur via the native Scene Configuration tab..
-- Now with "limit-to-darkvision" functionality
+- Now with "limit to darkvision" functionality
 
 ## Installation
 
