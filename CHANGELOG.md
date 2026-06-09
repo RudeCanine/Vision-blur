@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.1]
+
+- **Localization**: Adds polish localization by [Delgar](https://github.com/delgar89)
+
 ## [1.1.0] - 2026-02-17
 
 ### Initial Release
