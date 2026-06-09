@@ -1,0 +1,19 @@
+{
+  "VISION-BLUR.Name": "Rozmycie widzenia",
+  "VISION-BLUR.Welcome": "Załadowano moduł Vision Blur.",
+  "VISION-BLUR.SettingGmBlurName": "Włącz rozmycie dla MP",
+  "VISION-BLUR.SettingGmBlurHint": "Jeśli włączone, MP będzie widział rozmycie podczas kontrolowania Tokena. Gdy żaden Token nie jest kontrolowany, MP ma pełne widzenie.",
+  "VISION-BLUR.SettingDarkvisionOnlyName": "Włącz tylko z Widzeniem w ciemności",
+  "VISION-BLUR.SettingDarkvisionOnlyHint": "Jeśli włączone, efekt rozmycia aktywuje się tylko wtedy, gdy Token używa Widzenia w ciemności (na przykład w ciemności).",
+  "VISION-BLUR.SceneConfigHeader": "Nadpisanie modułu Vision Blur",
+  "VISION-BLUR.SceneOverrideName": "Włącz nadpisanie sceny",
+  "VISION-BLUR.SceneOverrideHint": "Nadpisuje globalne ustawienia modułu Vision Blur dla tej konkretnej sceny.",
+  "VISION-BLUR.SceneDisableName": "Całkowicie wyłącz rozmycie",
+  "VISION-BLUR.SceneDisableHint": "Jeśli zaznaczone, efekt rozmycia w ogóle nie będzie działał na tej scenie.",
+  "VISION-BLUR.SceneVisionRangeName": "Nadpisanie zasięgu widzenia (jednostki siatki)",
+  "VISION-BLUR.SceneVisionRangeHint": "Nadpisanie odległości, na jaką gracz widzi wyraźnie.",
+  "VISION-BLUR.SceneBlurStrengthName": "Nadpisanie siły rozmycia",
+  "VISION-BLUR.SceneBlurStrengthHint": "Nadpisanie intensywności efektu rozmycia (1-10).",
+  "VISION-BLUR.SceneDarkvisionOnlyName": "Nadpisanie tylko dla Widzenia w ciemności",
+  "VISION-BLUR.SceneDarkvisionOnlyHint": "Nadpisuje globalne ustawienie wymagające Widzenia w ciemności do uruchomienia efektu rozmycia."
+}
