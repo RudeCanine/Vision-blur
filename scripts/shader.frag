@@ -1,3 +1,5 @@
+precision mediump float;
+
 // Max supported tokens to track simultaneously
 const int MAX_TOKENS = 10;
 

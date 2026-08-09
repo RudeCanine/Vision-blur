@@ -60,7 +60,7 @@ Hooks.on("renderSceneConfig", (app, html, data) => {
   div.innerHTML = `<fieldset><legend>${game.i18n.localize("VISION-BLUR.SceneConfigHeader")}</legend>${markup}</fieldset>`;
   const fieldset = div.firstElementChild;
 
-  const tab = rootElement.querySelector('div[data-tab="lighting"], section[data-tab="lighting"], div[data-tab="ambience"], section[data-tab="ambience"]');
+  const tab = rootElement.querySelector('div[data-tab="lighting"], section[data-tab="lighting"], div[data-tab="ambience"], section[data-tab="ambience"], [data-tab="lighting"], [data-tab="ambience"]');
   
   if (tab) {
     tab.appendChild(fieldset);
@@ -119,20 +119,36 @@ Hooks.on("init", function () {
   });
 });
 
-Hooks.on("canvasReady", async function () {
+Hooks.on("canvasReady", function () {
   console.log(`${MODULE_ID} | Hook: canvasReady - Initializing Filter`);
 
-  // Load shader source
-  const fragSrc = await fetch(`modules/${MODULE_ID}/scripts/shader.frag`).then(r => r.text());
-
   // Create Filter
-  visionFilter = new VisionBlurFilter(undefined, fragSrc);
+  if (!visionFilter) {
+    visionFilter = VisionBlurFilter.create();
+  }
 
-  // Add to canvas stage
-  canvas.app.stage.filters = [visionFilter];
+  // Add to canvas stage cooperatively
+  const stageFilters = canvas.app.stage.filters || [];
+  if (!stageFilters.includes(visionFilter)) {
+    canvas.app.stage.filters = [...stageFilters, visionFilter];
+  }
 
+  // Remove existing listener to avoid duplicate tickers on scene reload
+  canvas.app.ticker.remove(updateFilter);
   // Add Ticker to update uniforms relative to token position
   canvas.app.ticker.add(updateFilter);
+});
+
+Hooks.on("canvasTearDown", function () {
+  if (canvas.app?.ticker) {
+    canvas.app.ticker.remove(updateFilter);
+  }
+});
+
+Hooks.on("controlToken", function () {
+  if (canvas.ready) {
+    updateTokenLogic();
+  }
 });
 
 // State variables for transition
@@ -189,19 +205,21 @@ function updateFilter() {
   // We need to re-calculate screen positions every frame because the camera or tokens might move
   const tokensForShader = [];
   const renderer = canvas.app.renderer;
+  const renderWidth = renderer.screen?.width ?? renderer.width;
+  const renderHeight = renderer.screen?.height ?? renderer.height;
   const rangeWorldPixels = rangeUnits * canvas.dimensions.size;
   const scale = canvas.stage.scale.x;
   // Normalize range by the MIN dimension, matching the shader's aspect logic
-  const baseRangeUV = (rangeWorldPixels * scale) / Math.min(renderer.width, renderer.height);
+  const baseRangeUV = (rangeWorldPixels * scale) / Math.min(renderWidth, renderHeight);
 
   for (const tData of activeTokensData) {
     const token = tData.token;
     if (!token || !token.visible) continue;
 
-    // Calculate Screen Position
-    const screenPos = canvas.stage.transform.worldTransform.apply(token.center);
-    const normX = screenPos.x / renderer.width;
-    const normY = screenPos.y / renderer.height;
+    // Calculate Screen Position (supports both v8 toGlobal and v7 worldTransform.apply)
+    const screenPos = canvas.stage.toGlobal ? canvas.stage.toGlobal(token.center) : canvas.stage.transform.worldTransform.apply(token.center);
+    const normX = screenPos.x / renderWidth;
+    const normY = screenPos.y / renderHeight;
 
     // If token has "Infinite Vision" (e.g. in Light), we pass a huge range
     // effectively clearing the screen for this token's contribution.
@@ -231,27 +249,32 @@ function updateTokenLogic() {
   const scene = canvas.scene;
   const enableOverride = scene?.getFlag(MODULE_ID, "enableOverride") ?? false;
   const disableBlur = scene?.getFlag(MODULE_ID, "disableBlur") ?? false;
+  const { isGM } = game.user;
+  const gmEnabled = game.settings.get(MODULE_ID, "gmBlurEnabled");
 
   // SCENE OVERRIDE: Disable Blur Completely
   if (enableOverride && disableBlur) {
     targetBlurFactor = 0;
+    currentBlurFactor = 0;
+    if (visionFilter) visionFilter.enabled = false;
     activeTokensData = [];
     return;
   }
 
-  const { isGM } = game.user;
-  const gmEnabled = game.settings.get(MODULE_ID, "gmBlurEnabled");
+  // GM Logic: If disabled for GM, we just stop here (targetBlurFactor = 0)
+  if (isGM && !gmEnabled) {
+    targetBlurFactor = 0;
+    currentBlurFactor = 0;
+    if (visionFilter) visionFilter.enabled = false;
+    activeTokensData = [];
+    return;
+  }
+
   const darkvisionOnly = (enableOverride && scene?.getFlag(MODULE_ID, "darkvisionBlurOnly") !== undefined)
       ? scene.getFlag(MODULE_ID, "darkvisionBlurOnly")
       : game.settings.get(MODULE_ID, "darkvisionBlurOnly");
 
   activeTokensData = []; // Reset list
-
-  // GM Logic: If disabled for GM, we just stop here (targetBlurFactor = 0)
-  if (isGM && !gmEnabled) {
-    targetBlurFactor = 0;
-    return;
-  }
 
   // Gather Candidate Tokens
   let candidates = [];
@@ -278,6 +301,11 @@ function updateTokenLogic() {
   // If no candidates, disable blur
   if (candidates.length === 0) {
     targetBlurFactor = 0;
+    activeTokensData = [];
+    if (isGM) {
+      currentBlurFactor = 0;
+      if (visionFilter) visionFilter.enabled = false;
+    }
     return;
   }
 
@@ -417,5 +445,10 @@ function updateTokenLogic() {
   } else {
     // Normal Mode: Always blur
     targetBlurFactor = 1;
+  }
+
+  // Instant release for GM: Avoid full-screen blur ramp/fade when GM deselects tokens
+  if (isGM && targetBlurFactor === 0) {
+    currentBlurFactor = 0;
   }
 }

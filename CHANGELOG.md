@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.0] - 2026-08-09
+
+### Foundry V14 Compatibility & Improvements
+
+- **Foundry VTT V14 Verification**: Updated compatibility metadata to support Foundry V14.
+- **PixiJS v8 GLSL 100 Shader Compatibility**: Refactored `VisionBlurFilter` fragment shader syntax (`varying`, `gl_FragColor`, `texture2D`) to ensure seamless WebGL shader compilation and prevent gray screen canvas errors.
+- **High-DPI / Retina Screen Scaling**: Updated screen UV calculations to use `renderer.screen` dimensions, ensuring pixel-perfect blur circles on high-DPI/4K displays.
+- **Instant GM Blur Release**: Registered `controlToken` hook and updated early returns so when a GM deselects a token, the blur filter immediately disables without full-screen transition flashes.
+- **Canvas Ticker Lifecycle Guard**: Added `canvasTearDown` hook listener and ticker cleanup on `canvasReady` to prevent duplicate frame tickers and memory leaks during scene transitions.
+
 ## [1.1.0] - 2026-02-17
 
 ### Initial Release
