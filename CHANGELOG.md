@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.2.0] - 2026-08-09
+## [1.3.0] - 2026-08-09
 
 ### Foundry V14 Compatibility & Improvements
 
