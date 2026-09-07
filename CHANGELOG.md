@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1] - 2026-09-07
+
+### Bug Fixes & Improvements
+
+- **Scene Configuration Layout Fix (#6)**: Fixed Scene Configuration window layout corruption in Foundry V13 by scoping Vision Blur override controls strictly to the Visibility tab content panel (`<div class="tab" data-tab="visibility">`).
+- **ApplicationV2 Sheet Handling**: Guarded window positioning in `renderSceneConfig` to prevent sheet layout distortion in V13/V14 ApplicationV2 sheets.
+- **Passive Perception Integration**: Added option for clear vision range to equal character tokens' Passive Perception score in DnD 5e, with per-scene override options.
+
 ## [1.3.0] - 2026-08-09
 
 ### Foundry V14 Compatibility & Improvements

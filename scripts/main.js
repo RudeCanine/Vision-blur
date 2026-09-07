@@ -16,6 +16,7 @@ Hooks.on("renderSceneConfig", (app, html, data) => {
   const blurStrength = scene.getFlag(MODULE_ID, "blurStrength") ?? game.settings.get(MODULE_ID, "blurStrength");
   
   const darkvisionBlurOnly = scene.getFlag(MODULE_ID, "darkvisionBlurOnly") ?? game.settings.get(MODULE_ID, "darkvisionBlurOnly");
+  const usePassivePerception = scene.getFlag(MODULE_ID, "usePassivePerception") ?? game.settings.get(MODULE_ID, "usePassivePerception");
 
   const markup = `
     <div class="form-group">
@@ -53,27 +54,52 @@ Hooks.on("renderSceneConfig", (app, html, data) => {
       </div>
       <p class="notes hint">${game.i18n.localize("VISION-BLUR.SceneDarkvisionOnlyHint")}</p>
     </div>
+    <div class="form-group">
+      <label>${game.i18n.localize("VISION-BLUR.ScenePassivePerceptionName")}</label>
+      <div class="form-fields">
+        <input type="checkbox" name="flags.${MODULE_ID}.usePassivePerception" ${usePassivePerception ? "checked" : ""}>
+      </div>
+      <p class="notes hint">${game.i18n.localize("VISION-BLUR.ScenePassivePerceptionHint")}</p>
+    </div>
   `;
 
   const rootElement = (app.element instanceof jQuery) ? app.element[0] : (app.element || html[0] || html);
   const div = document.createElement("div");
-  div.innerHTML = `<fieldset><legend>${game.i18n.localize("VISION-BLUR.SceneConfigHeader")}</legend>${markup}</fieldset>`;
+  div.innerHTML = `<fieldset class="vision-blur-fieldset"><legend>${game.i18n.localize("VISION-BLUR.SceneConfigHeader")}</legend>${markup}</fieldset>`;
   const fieldset = div.firstElementChild;
 
-  const tab = rootElement.querySelector('div[data-tab="lighting"], section[data-tab="lighting"], div[data-tab="ambience"], section[data-tab="ambience"], [data-tab="lighting"], [data-tab="ambience"]');
-  
+  // Locate the specific Visibility / Lighting / Sight / Ambience tab content panel
+  const tabCandidates = rootElement.querySelectorAll(
+    '[data-tab="visibility"], [data-tab="lighting"], [data-tab="sight"], [data-tab="ambience"]'
+  );
+  let tab = null;
+  for (const el of tabCandidates) {
+    if (el.tagName !== "A" && el.tagName !== "BUTTON" && !el.classList.contains("item")) {
+      tab = el;
+      break;
+    }
+  }
+
   if (tab) {
     tab.appendChild(fieldset);
   } else {
-    const footer = rootElement.querySelector('footer');
-    if (footer) {
-      footer.parentNode.insertBefore(fieldset, footer);
+    // Fall back to first available tab content panel to keep settings scoped within a tab
+    const firstTab = rootElement.querySelector('.tab[data-tab], div.tab, section.tab');
+    if (firstTab) {
+      firstTab.appendChild(fieldset);
     } else {
-      (html[0] || html).appendChild(fieldset);
+      const footer = rootElement.querySelector('footer');
+      if (footer) {
+        footer.parentNode.insertBefore(fieldset, footer);
+      } else {
+        (html[0] || html).appendChild(fieldset);
+      }
     }
   }
   
-  if (typeof app.setPosition === "function") {
+  // Skip setPosition({ height: "auto" }) for ApplicationV2 sheets as ApplicationV2 manages its own window dimensions
+  const isAppV2 = (typeof foundry !== "undefined" && foundry.applications?.api?.ApplicationV2 && app instanceof foundry.applications.api.ApplicationV2);
+  if (!isAppV2 && typeof app.setPosition === "function") {
     app.setPosition({ height: "auto" });
   }
 });
@@ -112,6 +138,15 @@ Hooks.on("init", function () {
   game.settings.register(MODULE_ID, "darkvisionBlurOnly", {
     name: "Enable Only with Darkvision",
     hint: "If enabled, the blur effect will only activate when the token is using Darkvision (e.g. in darkness).",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false
+  });
+
+  game.settings.register(MODULE_ID, "usePassivePerception", {
+    name: game.i18n.localize("VISION-BLUR.SettingPassivePerceptionName"),
+    hint: game.i18n.localize("VISION-BLUR.SettingPassivePerceptionHint"),
     scope: "world",
     config: true,
     type: Boolean,
@@ -197,9 +232,13 @@ function updateFilter() {
   const scene = canvas.scene;
   const enableOverride = scene?.getFlag(MODULE_ID, "enableOverride") ?? false;
   
-  const rangeUnits = (enableOverride && scene?.getFlag(MODULE_ID, "visionRange") !== undefined)
+  const defaultRangeUnits = (enableOverride && scene?.getFlag(MODULE_ID, "visionRange") !== undefined)
       ? scene.getFlag(MODULE_ID, "visionRange")
       : game.settings.get(MODULE_ID, "visionRange");
+
+  const usePassive = (enableOverride && scene?.getFlag(MODULE_ID, "usePassivePerception") !== undefined)
+      ? scene.getFlag(MODULE_ID, "usePassivePerception")
+      : game.settings.get(MODULE_ID, "usePassivePerception");
 
   // 3. Update Uniforms
   // We need to re-calculate screen positions every frame because the camera or tokens might move
@@ -207,10 +246,8 @@ function updateFilter() {
   const renderer = canvas.app.renderer;
   const renderWidth = renderer.screen?.width ?? renderer.width;
   const renderHeight = renderer.screen?.height ?? renderer.height;
-  const rangeWorldPixels = rangeUnits * canvas.dimensions.size;
   const scale = canvas.stage.scale.x;
-  // Normalize range by the MIN dimension, matching the shader's aspect logic
-  const baseRangeUV = (rangeWorldPixels * scale) / Math.min(renderWidth, renderHeight);
+  const minDimension = Math.min(renderWidth, renderHeight);
 
   for (const tData of activeTokensData) {
     const token = tData.token;
@@ -221,10 +258,22 @@ function updateFilter() {
     const normX = screenPos.x / renderWidth;
     const normY = screenPos.y / renderHeight;
 
+    let tokenRangeUnits = defaultRangeUnits;
+    if (usePassive && token.actor) {
+      const passive = token.actor.system?.skills?.prc?.passive
+        ?? token.actor.system?.attributes?.passivePerception;
+      if (typeof passive === "number" && !isNaN(passive) && passive > 0) {
+        tokenRangeUnits = passive;
+      }
+    }
+
+    const rangeWorldPixels = tokenRangeUnits * canvas.dimensions.size;
+    const tokenRangeUV = (rangeWorldPixels * scale) / minDimension;
+
     // If token has "Infinite Vision" (e.g. in Light), we pass a huge range
     // effectively clearing the screen for this token's contribution.
     // Otherwise, use the standard configured range.
-    let effectiveRange = baseRangeUV;
+    let effectiveRange = tokenRangeUV;
     if (tData.hasClearVision) {
       effectiveRange = 10.0; // Huge value (10x screen size) to clear everything
     }

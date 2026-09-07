@@ -1,5 +1,13 @@
-/* Module Styles */
-.foundry-v13-starter {
-  /* Scope your styles to avoid conflicts */
-  border: 1px solid red;
+/* Vision Blur Module Styles */
+
+.vision-blur-fieldset {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-light-2, rgba(0, 0, 0, 0.2));
+  border-radius: 4px;
+}
+
+.vision-blur-fieldset legend {
+  font-weight: bold;
+  padding: 0 4px;
 }

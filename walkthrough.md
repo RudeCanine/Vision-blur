@@ -1,12 +1,25 @@
-# Vision Blur V14 Migration & Verification Walkthrough
+# Vision Blur Walkthrough: Passive Perception Vision Range & V14 Support
 
 ## Summary of Completed Work
 
-We conducted a complete architectural audit, implemented V14 code enhancements, resolved WebGL shader compilation, and fixed the full-screen blur ramp on token release in **Vision Blur** on **Foundry VTT V14**.
+1. Added a **Passive Perception Vision Range** feature allowing clear vision range to dynamically equal character tokens' Passive Perception score in **DnD 5e** (1 Passive Perception point = 1 grid unit/tile radius).
+2. Integrated setting controls globally in module settings and per-scene in Scene Configuration Overrides.
+3. Verified complete compatibility with Foundry VTT V14.
 
 ---
 
-## ⚡ Instant GM Blur Release Fix (Resolved Video Issue)
+## 👁️ Passive Perception Vision Range Feature
+
+### Implementation Details
+- **Data Model:** Queries `token.actor.system.skills.prc.passive` (with legacy fallback to `token.actor.system.attributes.passivePerception`).
+- **Per-Token Calculation:** Clear vision radiuses are calculated individually per active token. A character with Passive Perception 12 gets a clear vision radius of 12 tiles (grid units), while a companion with 15 gets 15 tiles.
+- **Graceful Fallback:** Tokens without a valid Passive Perception score (e.g. non-character tokens or non-DnD 5e systems) seamlessly fall back to the static **Vision Range** setting.
+- **Global & Scene Overrides:** Registered `usePassivePerception` global setting (`game.settings.register`) and added scene override input in `renderSceneConfig`.
+- **Localization:** Added full localization strings in [languages/en.json](file:///c:/Users/Rudec/Desktop/vision-blur/Vision-blur/languages/en.json).
+
+---
+
+## ⚡ Instant GM Blur Release Fix
 
 ### Root Cause Analysis
 Watching the demonstration video revealed the exact mechanism causing the full-screen blur ramp when releasing a token:
@@ -51,3 +64,4 @@ node --check scripts/filter.js
 node --check scripts/main.js
 ```
 **Status:** PASSED (Zero syntax or compilation errors).
+

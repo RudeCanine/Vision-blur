@@ -5,6 +5,8 @@
     "VISION-BLUR.SettingGmBlurHint": "If enabled, the GM will see the blur when controlling a token. When no token is controlled, the GM will have full vision.",
     "VISION-BLUR.SettingDarkvisionOnlyName": "Enable Only with Darkvision",
     "VISION-BLUR.SettingDarkvisionOnlyHint": "If enabled, the blur effect will only activate when the token is using Darkvision (e.g. in darkness).",
+    "VISION-BLUR.SettingPassivePerceptionName": "Use Passive Perception for Vision Range (DnD 5e)",
+    "VISION-BLUR.SettingPassivePerceptionHint": "If enabled, token vision clear range (in tiles/grid units) equals the token's Passive Perception score in DnD 5e.",
     "VISION-BLUR.SceneConfigHeader": "Vision Blur Overrides",
     "VISION-BLUR.SceneOverrideName": "Enable Scene Override",
     "VISION-BLUR.SceneOverrideHint": "Override the global Vision Blur settings for this scene specifically.",
@@ -15,5 +17,7 @@
     "VISION-BLUR.SceneBlurStrengthName": "Blur Strength Override",
     "VISION-BLUR.SceneBlurStrengthHint": "Override for the intensity of the blur effect (1-10).",
     "VISION-BLUR.SceneDarkvisionOnlyName": "Darkvision Only Override",
-    "VISION-BLUR.SceneDarkvisionOnlyHint": "Override the global setting for requiring Darkvision to trigger the blur effect."
+    "VISION-BLUR.SceneDarkvisionOnlyHint": "Override the global setting for requiring Darkvision to trigger the blur effect.",
+    "VISION-BLUR.ScenePassivePerceptionName": "Use Passive Perception Override",
+    "VISION-BLUR.ScenePassivePerceptionHint": "Override the global setting for using Passive Perception for vision range."
 }
