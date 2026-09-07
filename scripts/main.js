@@ -196,6 +196,59 @@ const BLUR_SPEED = 0.05;   // Transition speed (lower is slower)
 // Store the calculated token data for the shader
 let activeTokensData = [];
 
+/**
+ * Safely extracts the Passive Perception score from an actor across system versions (DnD 5e v2/v3/v4+, PF2e, V14 DataModels).
+ * @param {Actor} actor
+ * @returns {number|null}
+ */
+function getPassivePerception(actor) {
+  if (!actor) return null;
+  const sys = actor.system;
+  if (!sys) return null;
+
+  // 1. Check DnD 5e skills (object or Collection/Map)
+  const skills = sys.skills;
+  let prc = null;
+  if (skills) {
+    if (typeof skills.get === "function") {
+      prc = skills.get("prc") ?? skills.get("perception");
+    } else {
+      prc = skills.prc ?? skills.perception;
+    }
+  }
+
+  if (prc) {
+    // Check direct passive score (number or numeric string)
+    let passiveVal = Number(prc.passive);
+    if (!isNaN(passiveVal) && passiveVal > 0) return passiveVal;
+
+    // Fallback: calculate passive from total or mod (10 + bonus)
+    let mod = Number(prc.total ?? prc.mod ?? prc.value);
+    if (!isNaN(mod)) return 10 + mod;
+  }
+
+  // 2. Check system.attributes.passivePerception (legacy DnD 5e)
+  let attrPassive = Number(sys.attributes?.passivePerception);
+  if (!isNaN(attrPassive) && attrPassive > 0) return attrPassive;
+
+  // 3. Check system.attributes.perception (PF2e / alternative systems)
+  let altPassive = Number(sys.attributes?.perception?.passive ?? sys.attributes?.perception?.value);
+  if (!isNaN(altPassive) && altPassive > 0) return altPassive;
+
+  // 4. Fallback: actor.getRollData()
+  if (typeof actor.getRollData === "function") {
+    try {
+      const rollData = actor.getRollData();
+      let rollPassive = Number(rollData?.skills?.prc?.passive ?? rollData?.attributes?.passivePerception);
+      if (!isNaN(rollPassive) && rollPassive > 0) return rollPassive;
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
 function updateFilter() {
   if (!visionFilter || !canvas.ready) return;
 
@@ -232,13 +285,13 @@ function updateFilter() {
   const scene = canvas.scene;
   const enableOverride = scene?.getFlag(MODULE_ID, "enableOverride") ?? false;
   
-  const defaultRangeUnits = (enableOverride && scene?.getFlag(MODULE_ID, "visionRange") !== undefined)
-      ? scene.getFlag(MODULE_ID, "visionRange")
-      : game.settings.get(MODULE_ID, "visionRange");
+  const defaultRangeUnits = (enableOverride && scene?.getFlag(MODULE_ID, "visionRange") != null)
+      ? Number(scene.getFlag(MODULE_ID, "visionRange"))
+      : Number(game.settings.get(MODULE_ID, "visionRange"));
 
-  const usePassive = (enableOverride && scene?.getFlag(MODULE_ID, "usePassivePerception") !== undefined)
-      ? scene.getFlag(MODULE_ID, "usePassivePerception")
-      : game.settings.get(MODULE_ID, "usePassivePerception");
+  const usePassive = (enableOverride && scene?.getFlag(MODULE_ID, "usePassivePerception") != null)
+      ? Boolean(scene.getFlag(MODULE_ID, "usePassivePerception"))
+      : Boolean(game.settings.get(MODULE_ID, "usePassivePerception"));
 
   // 3. Update Uniforms
   // We need to re-calculate screen positions every frame because the camera or tokens might move
@@ -248,6 +301,7 @@ function updateFilter() {
   const renderHeight = renderer.screen?.height ?? renderer.height;
   const scale = canvas.stage.scale.x;
   const minDimension = Math.min(renderWidth, renderHeight);
+  const gridSize = canvas.grid?.size ?? canvas.dimensions?.size ?? 100;
 
   for (const tData of activeTokensData) {
     const token = tData.token;
@@ -259,15 +313,15 @@ function updateFilter() {
     const normY = screenPos.y / renderHeight;
 
     let tokenRangeUnits = defaultRangeUnits;
-    if (usePassive && token.actor) {
-      const passive = token.actor.system?.skills?.prc?.passive
-        ?? token.actor.system?.attributes?.passivePerception;
-      if (typeof passive === "number" && !isNaN(passive) && passive > 0) {
-        tokenRangeUnits = passive;
+    if (usePassive) {
+      const actor = token.actor ?? token.document?.actor;
+      const passiveVal = getPassivePerception(actor);
+      if (passiveVal !== null && passiveVal > 0) {
+        tokenRangeUnits = passiveVal;
       }
     }
 
-    const rangeWorldPixels = tokenRangeUnits * canvas.dimensions.size;
+    const rangeWorldPixels = tokenRangeUnits * gridSize;
     const tokenRangeUV = (rangeWorldPixels * scale) / minDimension;
 
     // If token has "Infinite Vision" (e.g. in Light), we pass a huge range

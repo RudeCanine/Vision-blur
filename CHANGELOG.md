@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2] - 2026-09-07
+
+### Bug Fixes & Improvements
+
+- **Foundry V14 Passive Perception Fix**: Added multi-path `getPassivePerception` fallback extractor to support Foundry V14 DataModels, DnD 5e v4+ skill objects/Collections (`skills.get("prc")`), calculated skill totals (`10 + total/mod`), and unlinked token actors (`token.document.actor`).
+- **Scene Override Flag Resolution**: Fixed scene override flag evaluation so checking "Enable Scene Override" and toggle options evaluates null/undefined fallback flags accurately.
+- **Grid Size Calculation**: Enhanced grid unit pixel scaling using `canvas.grid.size` / `canvas.dimensions.size` across V13 and V14 grid systems.
+
 ## [1.3.1] - 2026-09-07
 
 ### Bug Fixes & Improvements
